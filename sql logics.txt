@@ -1,0 +1,79 @@
+use DSKH_ARGUS_ETL_PROCESS_SA
+--exec InsertDataFromStagingMappingLoad
+alter PROCEDURE InsertDataFromStagingMappingLoad
+AS
+BEGIN
+	BEGIN TRY
+		BEGIN TRANSACTION;
+
+		-- Insert into Tbl_Sensitivity_Scenario
+		INSERT INTO Tbl_Sensitivity_Scenario (Sensitivity_Scenario)
+		SELECT DISTINCT ST.sensitivity_scenario
+		FROM TBL_Staging_Mapping_Load ST
+		WHERE NOT EXISTS (
+				SELECT 1
+				FROM Tbl_Sensitivity_Scenario SS
+				WHERE SS.Sensitivity_Scenario = ST.sensitivity_scenario
+				);
+
+		-- Insert into TBL_MEV_Group1
+		INSERT INTO TBL_MEV_Group1 (
+			MEV_Group1
+			,SS_ID
+			)
+		SELECT distinct  ST.MEV_Group1
+			,SS.Id AS SS_ID
+		FROM TBL_Staging_Mapping_Load ST
+		JOIN Tbl_Sensitivity_Scenario SS ON ST.[sensitivity_scenario] = SS.[sensitivity_scenario]
+		WHERE ST.MEV_Group1 NOT IN (
+				SELECT MEV_Group1
+				FROM TBL_MEV_Group1
+				);
+
+		-- Insert into TBL_MEV_Group2
+		INSERT INTO TBL_MEV_Group2 (
+			MEV_Group2
+			,Spreads
+			,[12$]
+			,G1_Id
+			)
+		SELECT distinct ST.MEV_Group2
+			,ST.Spreads
+			,ST.[12$]
+			,M1.ID
+		FROM TBL_Staging_Mapping_Load ST
+		JOIN TBL_MEV_Group1 M1 ON ST.[MEV_Group1] = M1.[MEV_Group1]
+		WHERE ST.MEV_Group2 NOT IN (
+				SELECT MEV_Group2
+				FROM TBL_MEV_Group2
+				);
+
+		-- Insert into TBL_MEV_Series
+		INSERT INTO TBL_MEV_Series (
+			Series_Name
+			,Series_description
+			,SS_ID
+			,G1_Id
+			)
+		SELECT distinct ST.Series_Name
+			,ST.Series_description
+			,SS.ID
+			,M1.ID
+		FROM TBL_Staging_Mapping_Load ST
+		JOIN Tbl_Sensitivity_Scenario SS ON ST.[sensitivity_scenario] = SS.[sensitivity_scenario]
+		JOIN TBL_MEV_Group1 M1 ON ST.[MEV_Group1] = M1.[MEV_Group1]
+		WHERE ST.Series_Name NOT IN (
+				SELECT Series_Name
+				FROM TBL_MEV_Series
+				);
+
+		COMMIT TRANSACTION;
+	END TRY
+
+	BEGIN CATCH
+		-- Error handling
+		IF @@TRANCOUNT > 0
+			ROLLBACK TRANSACTION;
+				-- You can customize the error handling as per your requirements
+	END CATCH;
+END;
